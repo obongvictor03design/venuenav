@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>VenueNav - Interactive Event Wayfinding</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Tailwind Config for Dark Theme & Custom Fonts -->
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              500: '#22c55e',
+              600: '#16a34a',
+              400: '#4ade80',
+              accent: '#06b6d4'
+            },
+            dark: {
+              bg: '#0f172a',
+              card: '#1e293b',
+              border: '#334155'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <!-- html5-qrcode for live QR Code Scanning -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    body {
+      font-family: 'Inter', sans-serif;
+      touch-action: manipulation;
+    }
+    
+    /* Animated path dash line */
+    @keyframes dash {
+      to {
+        stroke-dashoffset: -40;
+      }
+    }
+    .route-animated {
+      stroke-dasharray: 8, 6;
+      animation: dash 1.5s linear infinite;
+    }
+
+    /* Pulse node effect */
+    @keyframes node-pulse {
+      0% { r: 6px; opacity: 1; }
+      50% { r: 12px; opacity: 0.4; }
+      100% { r: 6px; opacity: 1; }
+    }
+    .node-pulse {
+      animation: node-pulse 1.8s ease-in-out infinite;
+    }
+
+    /* Staff corridor hatch pattern styling */
+    .corridor-staff-dash {
+      stroke-dasharray: 6, 6;
+    }
+
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+    
+    /* SVG Interactive Zone Styles */
+    .venue-zone {
+      transition: all 0.25s ease;
+      cursor: pointer;
+    }
+    .venue-zone:hover {
+      filter: brightness(1.25);
+    }
+  </style>
+</head>
+<body class="bg-dark-bg text-slate-100 min-h-screen flex flex-col antialiased selection:bg-brand-500 selection:text-white">
+
+  <!-- TOP HEADER -->
+  <header class="bg-dark-card/90 backdrop-blur border-b border-dark-border sticky top-0 z-30 px-4 py-3 flex items-center justify-between shadow-md">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-brand-500/20 border border-brand-500/40 flex items-center justify-center text-brand-400 font-bold">
+        <i class="fa-solid fa-map-location-dot text-lg"></i>
+      </div>
+      <div>
+        <h1 class="font-bold text-base tracking-wide text-white flex items-center gap-2">
+          VenueNav <span class="text-[10px] uppercase font-semibold bg-brand-500/20 text-brand-400 px-2 py-0.5 rounded-full border border-brand-500/30">Pro Wayfinding</span>
+        </h1>
+        <p class="text-xs text-slate-400">Grand Arena & Event Center</p>
+      </div>
+    </div>
+
+    <!-- Right Header Actions -->
+    <div class="flex items-center gap-2">
+      <!-- Staff Access Mode Toggle -->
+      <label class="flex items-center gap-2 bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer hover:border-amber-500/50 transition-all select-none">
+        <input type="checkbox" id="staffModeToggle" class="accent-amber-500 w-3.5 h-3.5 cursor-pointer">
+        <span class="text-slate-300 flex items-center gap-1.5">
+          <i class="fa-solid fa-user-gear text-amber-400 text-xs"></i>
+          <span class="hidden md:inline">Staff Access Mode</span>
+          <span class="md:hidden">Staff</span>
+        </span>
+      </label>
+
+      <!-- QR Scan Action Button -->
+      <button id="openScannerBtn" class="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 active:scale-95 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-all shadow-lg shadow-brand-600/20">
+        <i class="fa-solid fa-qrcode text-sm"></i>
+        <span class="hidden sm:inline">Scan Location QR</span>
+        <span class="sm:hidden">Scan QR</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER (MAP + SIDE/BOTTOM PANEL) -->
+  <main class="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
+
+    <!-- NAVIGATION CONTROLS & SELECTION PANEL -->
+    <aside class="w-full lg:w-96 bg-dark-card/95 border-b lg:border-b-0 lg:border-r border-dark-border p-4 flex flex-col gap-4 z-20 shadow-xl overflow-y-auto max-h-[45vh] lg:max-h-none">
+      
+      <!-- Wayfinding Controls Form -->
+      <div class="bg-slate-900/60 p-3.5 rounded-xl border border-dark-border space-y-3">
+        <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+          <span>Route Finder</span>
+          <button id="swapLocationsBtn" class="text-slate-400 hover:text-brand-400 text-xs flex items-center gap-1 transition-colors" title="Swap From and To">
+            <i class="fa-solid fa-arrows-up-down"></i> Swap
+          </button>
+        </h2>
+
+        <!-- Origin Selector -->
+        <div class="relative">
+          <label class="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1.5">
+            <i class="fa-solid fa-circle-dot text-brand-400 text-[10px]"></i> Starting Location (From)
+          </label>
+          <select id="startLocationSelect" class="w-full bg-slate-800 border border-slate-700 text-slate-100 text-sm rounded-lg p-2.5 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all">
+            <option value="">-- Select Origin --</option>
+          </select>
+        </div>
+
+        <!-- Destination Selector -->
+        <div class="relative">
+          <label class="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1.5">
+            <i class="fa-solid fa-location-dot text-rose-500 text-[10px]"></i> Destination (To)
+          </label>
+          <select id="endLocationSelect" class="w-full bg-slate-800 border border-slate-700 text-slate-100 text-sm rounded-lg p-2.5 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all">
+            <option value="">-- Select Destination --</option>
+          </select>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex gap-2 pt-1">
+          <button id="findRouteBtn" class="flex-1 bg-brand-600 hover:bg-brand-500 active:scale-95 text-white font-semibold py-2.5 px-4 rounded-lg text-sm transition-all shadow-md flex items-center justify-center gap-2">
+            <i class="fa-solid fa-route"></i> Find Route
+          </button>
+          <button id="clearRouteBtn" class="bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 py-2.5 px-3 rounded-lg text-sm border border-slate-700 transition-all" title="Clear Route">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- MAP CORRIDOR LAYER CONTROLS & LEGEND -->
+      <div class="bg-slate-900/60 p-3 rounded-xl border border-dark-border space-y-2">
+        <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Walkway & Corridor Layers:</span>
+        <div class="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 gap-2 text-xs">
+          <!-- Public Corridors Toggle -->
+          <label class="flex items-center justify-between bg-slate-800/80 px-2.5 py-1.5 rounded border border-slate-700/60 cursor-pointer">
+            <span class="flex items-center gap-2">
+              <span class="w-3 h-1.5 rounded bg-cyan-400"></span> Public Corridors
+            </span>
+            <input type="checkbox" id="togglePublicCorridors" checked class="accent-cyan-400">
+          </label>
+          <!-- VIP Corridors Toggle -->
+          <label class="flex items-center justify-between bg-slate-800/80 px-2.5 py-1.5 rounded border border-slate-700/60 cursor-pointer">
+            <span class="flex items-center gap-2">
+              <span class="w-3 h-1.5 rounded bg-amber-400"></span> VIP Express Paths
+            </span>
+            <input type="checkbox" id="toggleVipCorridors" checked class="accent-amber-400">
+          </label>
+          <!-- Staff Service Paths Toggle -->
+          <label class="flex items-center justify-between bg-slate-800/80 px-2.5 py-1.5 rounded border border-slate-700/60 cursor-pointer">
+            <span class="flex items-center gap-2">
+              <span class="w-3 h-1.5 rounded bg-purple-400 border border-purple-300 border-dashed"></span> Staff Service Paths
+            </span>
+            <input type="checkbox" id="toggleStaffCorridors" checked class="accent-purple-400">
+          </label>
+        </div>
+      </div>
+
+      <!-- Quick Scan Presets / Simulators -->
+      <div>
+        <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-2">Simulate Scanning a QR Code Spot:</span>
+        <div class="flex flex-wrap gap-1.5" id="quickChipsContainer">
+          <!-- Dynamically populated chips -->
+        </div>
+      </div>
+
+      <!-- TURN BY TURN DIRECTIONS DISPLAY -->
+      <div id="directionsCard" class="bg-slate-900/80 border border-dark-border rounded-xl p-3.5 hidden flex-1 flex flex-col min-h-0">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-3">
+          <div class="flex items-center gap-2">
+            <div class="w-7 h-7 rounded-lg bg-brand-500/20 text-brand-400 flex items-center justify-center text-xs">
+              <i class="fa-solid fa-person-walking"></i>
+            </div>
+            <div>
+              <h3 class="font-semibold text-xs text-slate-200">Corridor Navigation</h3>
+              <p id="routeStats" class="text-[11px] text-brand-400 font-medium">-- meters • -- mins walk</p>
+            </div>
+          </div>
+          <span id="routeBadge" class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded border border-slate-700">Public Walkways</span>
+        </div>
+
+        <!-- Directions List Container -->
+        <div id="directionsList" class="space-y-3 overflow-y-auto pr-1 text-xs text-slate-300 flex-1 max-h-48 lg:max-h-none">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- MAP CANVAS DISPLAY AREA -->
+    <section class="flex-1 bg-slate-950 relative overflow-hidden flex items-center justify-center min-h-[350px] lg:min-h-full">
+      
+      <!-- SVG Map Viewport -->
+      <div id="mapContainer" class="w-full h-full flex items-center justify-center relative cursor-grab active:cursor-grabbing select-none">
+        
+        <svg id="venueMapSvg" viewBox="0 0 1000 700" class="w-full h-full max-w-full max-h-full transition-transform duration-100 ease-out">
+          <defs>
+            <!-- Grid Pattern for Blueprint look -->
+            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="1"/>
+            </pattern>
+            
+            <!-- Glow Filters for Route Guideline -->
+            <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="4" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+            </filter>
+            
+            <filter id="glow-vip" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+            </filter>
+          </defs>
+
+          <!-- Background Layer -->
+          <rect width="1000" height="700" fill="#090d16" />
+          <rect width="1000" height="700" fill="url(#grid)" opacity="0.7" />
+
+          <!-- OUTER BOUNDARIES & ENVIRONMENT -->
+          <rect x="20" y="20" width="960" height="660" rx="16" fill="none" stroke="#334155" stroke-width="2" stroke-dasharray="6 6"/>
+          
+          <!-- Parking Lots (Outside main building) -->
+          <g id="zone-car-park-1" class="venue-zone" onclick="selectZoneFromMap('car-park-1')">
+            <rect x="40" y="40" width="220" height="140" rx="8" fill="#1e293b" stroke="#475569" stroke-width="2"/>
+            <text x="150" y="100" fill="#94a3b8" font-size="14" font-weight="600" text-anchor="middle">Car Park 1</text>
+            <text x="150" y="120" fill="#64748b" font-size="11" text-anchor="middle">🅿️ North Parking</text>
+          </g>
+
+          <g id="zone-car-park-2" class="venue-zone" onclick="selectZoneFromMap('car-park-2')">
+            <rect x="40" y="520" width="220" height="140" rx="8" fill="#1e293b" stroke="#475569" stroke-width="2"/>
+            <text x="150" y="580" fill="#94a3b8" font-size="14" font-weight="600" text-anchor="middle">Car Park 2</text>
+            <text x="150" y="600" fill="#64748b" font-size="11" text-anchor="middle">🅿️ South Parking</text>
+          </g>
+
+          <g id="zone-main-gate" class="venue-zone" onclick="selectZoneFromMap('main-gate')">
+            <rect x="30" y="290" width="70" height="120" rx="8" fill="#0f766e" fill-opacity="0.2" stroke="#14b8a6" stroke-width="2"/>
+            <text x="65" y="345" fill="#2dd4bf" font-size="13" font-weight="700" text-anchor="middle">Main</text>
+            <text x="65" y="365" fill="#2dd4bf" font-size="13" font-weight="700" text-anchor="middle">Gate</text>
+            <path d="M 100 350 L 140 350" stroke="#14b8a6" stroke-width="2" stroke-dasharray="3 3"/>
+          </g>
+
+          <!-- MAIN BUILDING STRUCTURE -->
+          <rect x="300" y="60" width="650" height="580" rx="12" fill="#0f172a" stroke="#334155" stroke-width="3"/>
+
+          <!-- EXITS -->
+          <g id="zone-exit-1" class="venue-zone" onclick="selectZoneFromMap('exit-1')">
+            <rect x="580" y="45" width="80" height="30" rx="4" fill="#991b1b" fill-opacity="0.4" stroke="#ef4444" stroke-width="2"/>
+            <text x="620" y="65" fill="#fca5a5" font-size="12" font-weight="700" text-anchor="middle">EXIT 1</text>
+          </g>
+
+          <g id="zone-exit-2" class="venue-zone" onclick="selectZoneFromMap('exit-2')">
+            <rect x="935" y="310" width="30" height="80" rx="4" fill="#991b1b" fill-opacity="0.4" stroke="#ef4444" stroke-width="2"/>
+            <text x="950" y="355" fill="#fca5a5" font-size="11" font-weight="700" text-anchor="middle" transform="rotate(90, 950, 355)">EXIT 2</text>
+          </g>
+
+          <g id="zone-exit-3" class="venue-zone" onclick="selectZoneFromMap('exit-3')">
+            <rect x="580" y="625" width="80" height="30" rx="4" fill="#991b1b" fill-opacity="0.4" stroke="#ef4444" stroke-width="2"/>
+            <text x="620" y="645" fill="#fca5a5" font-size="12" font-weight="700" text-anchor="middle">EXIT 3</text>
+          </g>
+
+          <!-- ========================================================= -->
+          <!-- VISUAL STRUCTURAL WALKWAYS & CORRIDOR OVERLAY LAYERS -->
+          <!-- ========================================================= -->
+
+          <!-- 1. PUBLIC CORRIDORS & WALKWAYS LAYER -->
+          <g id="layer-public-corridors">
+            <!-- West Corridor Track -->
+            <rect x="315" y="80" width="30" height="540" fill="#0284c7" opacity="0.15" rx="4"/>
+            <line x1="330" y1="80" x2="330" y2="620" stroke="#0284c7" stroke-width="4" opacity="0.6"/>
+            
+            <!-- Central Spine Corridor Track -->
+            <rect x="590" y="80" width="40" height="540" fill="#0284c7" opacity="0.15" rx="4"/>
+            <line x1="610" y1="80" x2="610" y2="620" stroke="#0284c7" stroke-width="5" opacity="0.6"/>
+
+            <!-- East Corridor Track -->
+            <rect x="885" y="80" width="30" height="540" fill="#0284c7" opacity="0.15" rx="4"/>
+            <line x1="900" y1="80" x2="900" y2="620" stroke="#0284c7" stroke-width="4" opacity="0.6"/>
+
+            <!-- Outdoor Approach Paths -->
+            <line x1="65" y1="350" x2="330" y2="350" stroke="#0284c7" stroke-width="4" opacity="0.5"/>
+            <line x1="150" y1="110" x2="150" y2="350" stroke="#0284c7" stroke-width="3" opacity="0.5"/>
+            <line x1="150" y1="590" x2="150" y2="350" stroke="#0284c7" stroke-width="3" opacity="0.5"/>
+
+            <text x="325" y="240" fill="#38bdf8" font-size="9" font-weight="600" transform="rotate(-90 325 240)">WEST CORRIDOR</text>
+            <text x="605" y="240" fill="#38bdf8" font-size="9" font-weight="600" transform="rotate(-90 605 240)">MAIN CENTRAL CONCOURSE</text>
+            <text x="895" y="240" fill="#38bdf8" font-size="9" font-weight="600" transform="rotate(-90 895 240)">EAST PUBLIC WALKWAY</text>
+          </g>
+
+          <!-- 2. VIP EXPRESS CORRIDORS LAYER -->
+          <g id="layer-vip-corridors">
+            <!-- VIP North Express Path (Lounge 1 to Auditorium & VIP 2) -->
+            <path d="M 330 140 L 465 140 M 330 140 L 330 560 L 465 560" fill="none" stroke="#f59e0b" stroke-width="3" opacity="0.8" filter="url(#glow-vip)"/>
+            <text x="400" y="132" fill="#fbbf24" font-size="8" font-weight="700">VIP EXPRESS ACCESS</text>
+          </g>
+
+          <!-- 3. STAFF & SERVICE WORK PATHS LAYER -->
+          <g id="layer-staff-corridors">
+            <!-- Back of House Service Path (Kitchen -> Staff Room -> Changing Room -> Bars Restock) -->
+            <path d="M 825 140 L 920 140 L 920 560 L 825 560 M 825 280 L 920 280 M 825 420 L 920 420" fill="none" stroke="#a855f7" stroke-width="3" class="corridor-staff-dash" opacity="0.85"/>
+            <text x="915" y="470" fill="#c084fc" font-size="8" font-weight="700" transform="rotate(90 915 470)">STAFF RESTOCK WORK PATH 🛠️</text>
+          </g>
+
+          <!-- INDOOR ROOMS & ZONES -->
+          <!-- 1. Main Auditorium -->
+          <g id="zone-main-auditorium" class="venue-zone" onclick="selectZoneFromMap('main-auditorium')">
+            <rect x="370" y="220" width="190" height="260" rx="8" fill="#1e1b4b" stroke="#6366f1" stroke-width="2"/>
+            <text x="465" y="345" fill="#a5b4fc" font-size="16" font-weight="700" text-anchor="middle">Main Auditorium</text>
+            <text x="465" y="365" fill="#818cf8" font-size="11" text-anchor="middle">🎭 Stage & Seating</text>
+          </g>
+
+          <!-- 2. VIP Area -->
+          <g id="zone-vip-area" class="venue-zone" onclick="selectZoneFromMap('vip-area')">
+            <rect x="370" y="80" width="190" height="120" rx="8" fill="#312e81" stroke="#818cf8" stroke-width="2"/>
+            <text x="465" y="135" fill="#c7d2fe" font-size="14" font-weight="700" text-anchor="middle">VIP Lounge 1</text>
+            <text x="465" y="155" fill="#a5b4fc" font-size="10" text-anchor="middle">👑 Main VIP Access</text>
+          </g>
+
+          <!-- 3. VIP 2 Room -->
+          <g id="zone-vip-2-room" class="venue-zone" onclick="selectZoneFromMap('vip-2-room')">
+            <rect x="370" y="500" width="190" height="120" rx="8" fill="#312e81" stroke="#818cf8" stroke-width="2"/>
+            <text x="465" y="555" fill="#c7d2fe" font-size="14" font-weight="700" text-anchor="middle">VIP 2 Room</text>
+            <text x="465" y="575" fill="#a5b4fc" font-size="10" text-anchor="middle">⭐ Private Suites</text>
+          </g>
+
+          <!-- 4. Bar 1 -->
+          <g id="zone-bar-1" class="venue-zone" onclick="selectZoneFromMap('bar-1')">
+            <rect x="660" y="80" width="100" height="120" rx="8" fill="#701a75" stroke="#d946ef" stroke-width="2"/>
+            <text x="710" y="135" fill="#f5d0fe" font-size="13" font-weight="700" text-anchor="middle">Bar 1</text>
+            <text x="710" y="155" fill="#e879f9" font-size="10" text-anchor="middle">🍹 Drinks & Lounge</text>
+          </g>
+
+          <!-- 5. Kitchen -->
+          <g id="zone-kitchen" class="venue-zone" onclick="selectZoneFromMap('kitchen')">
+            <rect x="780" y="80" width="90" height="120" rx="8" fill="#7c2d12" stroke="#f97316" stroke-width="2"/>
+            <text x="825" y="135" fill="#ffedd5" font-size="13" font-weight="700" text-anchor="middle">Kitchen</text>
+            <text x="825" y="155" fill="#fb923c" font-size="10" text-anchor="middle">🍳 Catering</text>
+          </g>
+
+          <!-- 6. Bar 2 -->
+          <g id="zone-bar-2" class="venue-zone" onclick="selectZoneFromMap('bar-2')">
+            <rect x="660" y="500" width="100" height="120" rx="8" fill="#701a75" stroke="#d946ef" stroke-width="2"/>
+            <text x="710" y="555" fill="#f5d0fe" font-size="13" font-weight="700" text-anchor="middle">Bar 2</text>
+            <text x="710" y="575" fill="#e879f9" font-size="10" text-anchor="middle">🍺 Refreshments</text>
+          </g>
+
+          <!-- 7. Staff Room -->
+          <g id="zone-staff-room" class="venue-zone" onclick="selectZoneFromMap('staff-room')">
+            <rect x="780" y="500" width="90" height="120" rx="8" fill="#14532d" stroke="#22c55e" stroke-width="2"/>
+            <text x="825" y="555" fill="#dcfce7" font-size="12" font-weight="700" text-anchor="middle">Staff Room</text>
+            <text x="825" y="575" fill="#4ade80" font-size="10" text-anchor="middle">🔑 Crew Only</text>
+          </g>
+
+          <!-- 8. Changing Room -->
+          <g id="zone-changing-room" class="venue-zone" onclick="selectZoneFromMap('changing-room')">
+            <rect x="660" y="220" width="100" height="120" rx="8" fill="#1e3a8a" stroke="#3b82f6" stroke-width="2"/>
+            <text x="710" y="275" fill="#dbeafe" font-size="12" font-weight="700" text-anchor="middle">Changing</text>
+            <text x="710" y="293" fill="#dbeafe" font-size="12" font-weight="700" text-anchor="middle">Room</text>
+          </g>
+
+          <!-- 9. Medical Room -->
+          <g id="zone-medical-room" class="venue-zone" onclick="selectZoneFromMap('medical-room')">
+            <rect x="660" y="360" width="100" height="120" rx="8" fill="#881337" stroke="#f43f5e" stroke-width="2"/>
+            <text x="710" y="415" fill="#ffe4e6" font-size="13" font-weight="700" text-anchor="middle">Medical</text>
+            <text x="710" y="435" fill="#fb7185" font-size="10" text-anchor="middle">🚑 First Aid</text>
+          </g>
+
+          <!-- 10. Male Toilet -->
+          <g id="zone-male-toilet" class="venue-zone" onclick="selectZoneFromMap('male-toilet')">
+            <rect x="780" y="220" width="90" height="120" rx="8" fill="#164e63" stroke="#06b6d4" stroke-width="2"/>
+            <text x="825" y="275" fill="#cffaff" font-size="12" font-weight="700" text-anchor="middle">Male</text>
+            <text x="825" y="295" fill="#cffaff" font-size="12" font-weight="700" text-anchor="middle">Toilet 🚹</text>
+          </g>
+
+          <!-- 11. Female Toilet -->
+          <g id="zone-female-toilet" class="venue-zone" onclick="selectZoneFromMap('female-toilet')">
+            <rect x="780" y="360" width="90" height="120" rx="8" fill="#831843" stroke="#ec4899" stroke-width="2"/>
+            <text x="825" y="415" fill="#fce7f3" font-size="12" font-weight="700" text-anchor="middle">Female</text>
+            <text x="825" y="435" fill="#fce7f3" font-size="12" font-weight="700" text-anchor="middle">Toilet 🚺</text>
+          </g>
+
+          <!-- ROUTE GRAPH GUIDELINE LAYER -->
+          <g id="routeLayer"></g>
+
+          <!-- MAP PINS & HIGHLIGHT MARKERS -->
+          <g id="markersLayer"></g>
+        </svg>
+
+        <!-- MAP CONTROLS FLOATING BAR -->
+        <div class="absolute bottom-4 right-4 flex flex-col gap-2 z-10">
+          <button id="zoomInBtn" class="w-10 h-10 bg-dark-card/90 border border-dark-border rounded-xl text-slate-200 hover:text-white flex items-center justify-center shadow-lg active:scale-95 transition-all" title="Zoom In">
+            <i class="fa-solid fa-plus text-sm"></i>
+          </button>
+          <button id="zoomOutBtn" class="w-10 h-10 bg-dark-card/90 border border-dark-border rounded-xl text-slate-200 hover:text-white flex items-center justify-center shadow-lg active:scale-95 transition-all" title="Zoom Out">
+            <i class="fa-solid fa-minus text-sm"></i>
+          </button>
+          <button id="zoomResetBtn" class="w-10 h-10 bg-dark-card/90 border border-dark-border rounded-xl text-slate-200 hover:text-white flex items-center justify-center shadow-lg active:scale-95 transition-all" title="Reset View">
+            <i class="fa-solid fa-rotate text-sm"></i>
+          </button>
+        </div>
+
+        <!-- Tap Info Overlay Hint -->
+        <div class="absolute top-4 right-4 bg-dark-card/80 backdrop-blur border border-dark-border px-3 py-1.5 rounded-lg text-[11px] text-slate-400 pointer-events-none flex items-center gap-1.5 shadow">
+          <i class="fa-solid fa-hand-pointer text-brand-400"></i> Tap any room/zone to navigate
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- QR SCANNER MODAL -->
+  <div id="qrModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-dark-card border border-dark-border rounded-2xl w-full max-w-md p-5 flex flex-col gap-4 shadow-2xl relative">
+      
+      <!-- Close Button -->
+      <button id="closeScannerBtn" class="absolute top-4 right-4 text-slate-400 hover:text-white w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center transition-colors">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-lg bg-brand-500/20 text-brand-400 flex items-center justify-center">
+          <i class="fa-solid fa-qrcode"></i>
+        </div>
+        <div>
+          <h3 class="font-bold text-sm text-white">Scan Location QR Code</h3>
+          <p class="text-xs text-slate-400">Point your camera at a venue sign QR code</p>
+        </div>
+      </div>
+
+      <!-- Camera Video Container -->
+      <div class="w-full bg-slate-950 rounded-xl overflow-hidden border border-slate-800 min-h-[260px] flex items-center justify-center relative">
+        <div id="qr-reader" class="w-full"></div>
+      </div>
+
+      <!-- Simulation Quick Scan Buttons inside Modal for easy desktop testing -->
+      <div class="border-t border-slate-800 pt-3">
+        <span class="text-[11px] text-slate-400 block mb-2 font-medium">Or simulate scanning location barcode:</span>
+        <div class="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto" id="modalSimButtons">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- NOTIFICATION TOAST -->
+  <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 bg-brand-600 text-white text-xs font-semibold px-4 py-2.5 rounded-full shadow-2xl z-50 flex items-center gap-2 transition-all opacity-0 pointer-events-none transform translate-y-4">
+    <i class="fa-solid fa-circle-check"></i>
+    <span id="toastMsg">Location set via QR Scan!</span>
+  </div>
+
+  <!-- JAVASCRIPT LOGIC & NAVIGATION ENGINE -->
+  <script>
+    /* ==========================================================================
+       1. VENUE LOCATIONS DATASET & ENHANCED GRAPH TOPOLOGY FOR WAYFINDING
+       ========================================================================== */
+    const locations = [
+      { id: 'main-gate', name: 'Main Gate', category: 'Entrance', icon: 'fa-door-open', color: '#14b8a6', coords: { x: 65, y: 350 }, node: 'N_MAINGATE' },
+      { id: 'car-park-1', name: 'Car Park 1', category: 'Parking', icon: 'fa-square-p', color: '#64748b', coords: { x: 150, y: 110 }, node: 'N_CP1' },
+      { id: 'car-park-2', name: 'Car Park 2', category: 'Parking', icon: 'fa-square-p', color: '#64748b', coords: { x: 150, y: 590 }, node: 'N_CP2' },
+      { id: 'exit-1', name: 'Exit 1 (North)', category: 'Exit', icon: 'fa-person-walking-arrow-right', color: '#ef4444', coords: { x: 620, y: 60 }, node: 'N_EXIT1' },
+      { id: 'exit-2', name: 'Exit 2 (East)', category: 'Exit', icon: 'fa-person-walking-arrow-right', color: '#ef4444', coords: { x: 950, y: 350 }, node: 'N_EXIT2' },
+      { id: 'exit-3', name: 'Exit 3 (South)', category: 'Exit', icon: 'fa-person-walking-arrow-right', color: '#ef4444', coords: { x: 620, y: 640 }, node: 'N_EXIT3' },
+      { id: 'main-auditorium', name: 'Main Auditorium', category: 'Hall', icon: 'fa-masks-theater', color: '#6366f1', coords: { x: 465, y: 350 }, node: 'N_AUDITORIUM' },
+      { id: 'vip-area', name: 'VIP Area', category: 'Lounge', icon: 'fa-crown', color: '#818cf8', coords: { x: 465, y: 140 }, node: 'N_VIP1' },
+      { id: 'vip-2-room', name: 'VIP 2 Room', category: 'Lounge', icon: 'fa-star', color: '#818cf8', coords: { x: 465, y: 560 }, node: 'N_VIP2' },
+      { id: 'bar-1', name: 'Bar 1', category: 'Food & Drink', icon: 'fa-martini-glass-citrus', color: '#d946ef', coords: { x: 710, y: 140 }, node: 'N_BAR1' },
+      { id: 'bar-2', name: 'Bar 2', category: 'Food & Drink', icon: 'fa-beer-mug-empty', color: '#d946ef', coords: { x: 710, y: 560 }, node: 'N_BAR2' },
+      { id: 'kitchen', name: 'Kitchen', category: 'Services', icon: 'fa-utensils', color: '#f97316', coords: { x: 825, y: 140 }, node: 'N_KITCHEN' },
+      { id: 'staff-room', name: 'Staff Room', category: 'Services', icon: 'fa-user-tie', color: '#22c55e', coords: { x: 825, y: 560 }, node: 'N_STAFF' },
+      { id: 'changing-room', name: 'Changing Room', category: 'Facilities', icon: 'fa-shirt', color: '#3b82f6', coords: { x: 710, y: 280 }, node: 'N_CHANGING' },
+      { id: 'medical-room', name: 'Medical Room', category: 'Emergency', icon: 'fa-kit-medical', color: '#f43f5e', coords: { x: 710, y: 420 }, node: 'N_MEDICAL' },
+      { id: 'male-toilet', name: 'Male Toilet', category: 'Restroom', icon: 'fa-mars', color: '#06b6d4', coords: { x: 825, y: 280 }, node: 'N_MTOILET' },
+      { id: 'female-toilet', name: 'Female Toilet', category: 'Restroom', icon: 'fa-venus', color: '#ec4899', coords: { x: 825, y: 420 }, node: 'N_FTOILET' }
+    ];
+
+    /* GRAPH NODES (Location Points + Hallway Intersections + Staff Back-of-House Nodes) */
+    const nodes = {
+      // Destination / Origin Nodes
+      'N_MAINGATE': { x: 65, y: 350, name: 'Main Gate Gatehouse' },
+      'N_CP1': { x: 150, y: 110, name: 'North Parking Bay' },
+      'N_CP2': { x: 150, y: 590, name: 'South Parking Bay' },
+      'N_EXIT1': { x: 620, y: 60, name: 'North Emergency Exit' },
+      'N_EXIT2': { x: 950, y: 350, name: 'East Emergency Exit' },
+      'N_EXIT3': { x: 620, y: 640, name: 'South Emergency Exit' },
+      'N_AUDITORIUM': { x: 465, y: 350, name: 'Main Auditorium Foyer' },
+      'N_VIP1': { x: 465, y: 140, name: 'VIP Lounge 1 Desk' },
+      'N_VIP2': { x: 465, y: 560, name: 'VIP 2 Suite Entry' },
+      'N_BAR1': { x: 710, y: 140, name: 'Bar 1 Counter' },
+      'N_BAR2': { x: 710, y: 560, name: 'Bar 2 Counter' },
+      'N_KITCHEN': { x: 825, y: 140, name: 'Main Kitchen Hatch' },
+      'N_STAFF': { x: 825, y: 560, name: 'Staff Lounge Door' },
+      'N_CHANGING': { x: 710, y: 280, name: 'Changing Room Entry' },
+      'N_MEDICAL': { x: 710, y: 420, name: 'First Aid Medical Room' },
+      'N_MTOILET': { x: 825, y: 280, name: 'Male Restroom Portal' },
+      'N_FTOILET': { x: 825, y: 420, name: 'Female Restroom Portal' },
+
+      // West Corridor Intersections
+      'INT_WEST_MID': { x: 330, y: 350, name: 'West Corridor Junction' },
+      'INT_WEST_TOP': { x: 330, y: 140, name: 'VIP North Walkway Turn' },
+      'INT_WEST_BOT': { x: 330, y: 560, name: 'VIP South Walkway Turn' },
+
+      // Main Central Concourse Intersections
+      'INT_SPINE_TOP': { x: 610, y: 140, name: 'North Central Concourse Hub' },
+      'INT_SPINE_MID': { x: 610, y: 350, name: 'Central Arena Concourse Hub' },
+      'INT_SPINE_MID_TOP': { x: 610, y: 280, name: 'Changing Room Concourse Junction' },
+      'INT_SPINE_MID_BOT': { x: 610, y: 420, name: 'Medical Station Concourse Junction' },
+      'INT_SPINE_BOT': { x: 610, y: 560, name: 'South Central Concourse Hub' },
+
+      // East Public Walkway Intersections
+      'INT_EAST_TOP': { x: 900, y: 140, name: 'East Promenade North Corner' },
+      'INT_EAST_MID': { x: 900, y: 350, name: 'East Promenade Central Hub' },
+      'INT_EAST_MID_TOP': { x: 900, y: 280, name: 'Restroom North Access Corridor' },
+      'INT_EAST_MID_BOT': { x: 900, y: 420, name: 'Restroom South Access Corridor' },
+      'INT_EAST_BOT': { x: 900, y: 560, name: 'East Promenade South Corner' },
+
+      // Outdoor Entry Walkways
+      'INT_OUTSIDE_TOP': { x: 150, y: 350, name: 'Plaza Plaza Crossroads' },
+      'INT_OUTSIDE_CP1': { x: 150, y: 230, name: 'North Parking Walkway' },
+      'INT_OUTSIDE_CP2': { x: 150, y: 470, name: 'South Parking Walkway' },
+
+      // Service & Staff Dedicated Back-of-House Work Path Nodes
+      'INT_STAFF_NORTH': { x: 920, y: 140, name: 'Kitchen Restock Service Path' },
+      'INT_STAFF_MID_NORTH': { x: 920, y: 280, name: 'Male Restroom Backstage Path' },
+      'INT_STAFF_MID_SOUTH': { x: 920, y: 420, name: 'Female Restroom Backstage Path' },
+      'INT_STAFF_SOUTH': { x: 920, y: 560, name: 'Staff Lounge Service Corridor' }
+    };
+
+    /* EDGES NETWORK WITH TYPE DEFINITIONS (public, vip, staff) */
+    const edges = [
+      // Outdoor Public Connections
+      { u: 'N_CP1', v: 'INT_OUTSIDE_CP1', type: 'public', corridor: 'North Parking Path' },
+      { u: 'INT_OUTSIDE_CP1', v: 'INT_OUTSIDE_TOP', type: 'public', corridor: 'Outdoor Plaza Path' },
+      { u: 'N_CP2', v: 'INT_OUTSIDE_CP2', type: 'public', corridor: 'South Parking Path' },
+      { u: 'INT_OUTSIDE_CP2', v: 'INT_OUTSIDE_TOP', type: 'public', corridor: 'Outdoor Plaza Path' },
+      { u: 'INT_OUTSIDE_TOP', v: 'N_MAINGATE', type: 'public', corridor: 'Main Gate Approach' },
+      { u: 'N_MAINGATE', v: 'INT_WEST_MID', type: 'public', corridor: 'Main Entrance Corridor' },
+
+      // West Corridor & VIP Express Connections
+      { u: 'INT_WEST_TOP', v: 'INT_WEST_MID', type: 'public', corridor: 'West Corridor' },
+      { u: 'INT_WEST_MID', v: 'INT_WEST_BOT', type: 'public', corridor: 'West Corridor' },
+      { u: 'INT_WEST_TOP', v: 'N_VIP1', type: 'vip', corridor: 'VIP Express North Pathway' },
+      { u: 'INT_WEST_MID', v: 'N_AUDITORIUM', type: 'public', corridor: 'Auditorium Main Portal' },
+      { u: 'INT_WEST_BOT', v: 'N_VIP2', type: 'vip', corridor: 'VIP Express South Pathway' },
+      { u: 'N_VIP1', v: 'N_VIP2', type: 'vip', corridor: 'VIP Direct Express Link' },
+
+      // Horizontal Corridor Bridges
+      { u: 'N_VIP1', v: 'INT_SPINE_TOP', type: 'public', corridor: 'North VIP Walkway' },
+      { u: 'N_AUDITORIUM', v: 'INT_SPINE_MID', type: 'public', corridor: 'Central Arena Walkway' },
+      { u: 'N_VIP2', v: 'INT_SPINE_BOT', type: 'public', corridor: 'South VIP Walkway' },
+
+      // Main Central Concourse Connections
+      { u: 'N_EXIT1', v: 'INT_SPINE_TOP', type: 'public', corridor: 'North Exit Concourse' },
+      { u: 'INT_SPINE_TOP', v: 'INT_SPINE_MID_TOP', type: 'public', corridor: 'Main Central Concourse' },
+      { u: 'INT_SPINE_MID_TOP', v: 'INT_SPINE_MID', type: 'public', corridor: 'Main Central Concourse' },
+      { u: 'INT_SPINE_MID', v: 'INT_SPINE_MID_BOT', type: 'public', corridor: 'Main Central Concourse' },
+      { u: 'INT_SPINE_MID_BOT', v: 'INT_SPINE_BOT', type: 'public', corridor: 'Main Central Concourse' },
+      { u: 'INT_SPINE_BOT', v: 'N_EXIT3', type: 'public', corridor: 'South Exit Concourse' },
+
+      // Rooms Access from Concourse
+      { u: 'INT_SPINE_TOP', v: 'N_BAR1', type: 'public', corridor: 'Bar 1 Lounge Access' },
+      { u: 'INT_SPINE_MID_TOP', v: 'N_CHANGING', type: 'public', corridor: 'Changing Room Walkway' },
+      { u: 'INT_SPINE_MID_BOT', v: 'N_MEDICAL', type: 'public', corridor: 'Medical Center Access' },
+      { u: 'INT_SPINE_BOT', v: 'N_BAR2', type: 'public', corridor: 'Bar 2 Lounge Access' },
+
+      // Public Promenade & Restroom Connectors
+      { u: 'N_BAR1', v: 'INT_EAST_TOP', type: 'public', corridor: 'East Promenade North' },
+      { u: 'N_CHANGING', v: 'INT_EAST_MID_TOP', type: 'public', corridor: 'Public Service Hallway' },
+      { u: 'N_MEDICAL', v: 'INT_EAST_MID_BOT', type: 'public', corridor: 'Emergency Medical Hallway' },
+      { u: 'N_BAR2', v: 'INT_EAST_BOT', type: 'public', corridor: 'East Promenade South' },
+
+      { u: 'INT_EAST_TOP', v: 'INT_EAST_MID_TOP', type: 'public', corridor: 'East Public Walkway' },
+      { u: 'INT_EAST_MID_TOP', v: 'INT_EAST_MID', type: 'public', corridor: 'East Public Walkway' },
+      { u: 'INT_EAST_MID', v: 'INT_EAST_MID_BOT', type: 'public', corridor: 'East Public Walkway' },
+      { u: 'INT_EAST_MID_BOT', v: 'INT_EAST_BOT', type: 'public', corridor: 'East Public Walkway' },
+      { u: 'INT_EAST_MID', v: 'N_EXIT2', type: 'public', corridor: 'East Exit Portal' },
+
+      { u: 'INT_EAST_TOP', v: 'N_KITCHEN', type: 'public', corridor: 'Kitchen Main Counter Entrance' },
+      { u: 'INT_EAST_MID_TOP', v: 'N_MTOILET', type: 'public', corridor: 'Male Restroom Walkway' },
+      { u: 'INT_EAST_MID_BOT', v: 'N_FTOILET', type: 'public', corridor: 'Female Restroom Walkway' },
+      { u: 'INT_EAST_BOT', v: 'N_STAFF', type: 'public', corridor: 'Staff Room Entry Corridor' },
+
+      // DEDICATED STAFF & SERVICE WORK PATHS (Restricted to Staff Access Mode)
+      { u: 'N_KITCHEN', v: 'INT_STAFF_NORTH', type: 'staff', corridor: 'Kitchen Back-of-House Work Path' },
+      { u: 'INT_STAFF_NORTH', v: 'INT_STAFF_MID_NORTH', type: 'staff', corridor: 'Service Supply Work Corridor' },
+      { u: 'INT_STAFF_MID_NORTH', v: 'INT_STAFF_MID_SOUTH', type: 'staff', corridor: 'Service Supply Work Corridor' },
+      { u: 'INT_STAFF_MID_SOUTH', v: 'INT_STAFF_SOUTH', type: 'staff', corridor: 'Service Supply Work Corridor' },
+      { u: 'INT_STAFF_SOUTH', v: 'N_STAFF', type: 'staff', corridor: 'Staff Lounge Service Entry' },
+      { u: 'INT_STAFF_MID_NORTH', v: 'N_MTOILET', type: 'staff', corridor: 'Restroom Maintenance Tunnel' },
+      { u: 'INT_STAFF_MID_SOUTH', v: 'N_FTOILET', type: 'staff', corridor: 'Restroom Maintenance Tunnel' },
+      { u: 'INT_STAFF_NORTH', v: 'N_BAR1', type: 'staff', corridor: 'Bar 1 Supply Restock Line' },
+      { u: 'INT_STAFF_SOUTH', v: 'N_BAR2', type: 'staff', corridor: 'Bar 2 Supply Restock Line' }
+    ];
+
+    /* ==========================================================================
+       2. DIJKSTRA'S SHORTEST PATH ALGORITHM WITH ROUTE TYPES
+       ========================================================================== */
+    function getDistance(n1, n2) {
+      const dx = nodes[n1].x - nodes[n2].x;
+      const dy = nodes[n1].y - nodes[n2].y;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function buildGraph(allowStaffMode = false) {
+      const adj = {};
+      Object.keys(nodes).forEach(n => adj[n] = []);
+      edges.forEach(edge => {
+        // Skip staff-only edges if staff access mode is disabled
+        if (edge.type === 'staff' && !allowStaffMode) return;
+        
+        const dist = getDistance(edge.u, edge.v);
+        adj[edge.u].push({ node: edge.v, dist, type: edge.type, corridor: edge.corridor });
+        adj[edge.v].push({ node: edge.u, dist, type: edge.type, corridor: edge.corridor });
+      });
+      return adj;
+    }
+
+    function findShortestPath(startNode, endNode, allowStaffMode) {
+      const graph = buildGraph(allowStaffMode);
+      const distances = {};
+      const previous = {};
+      const edgeUsed = {};
+      const pq = new Set();
+
+      Object.keys(nodes).forEach(n => {
+        distances[n] = Infinity;
+        previous[n] = null;
+        pq.add(n);
+      });
+
+      distances[startNode] = 0;
+
+      while (pq.size > 0) {
+        let current = null;
+        for (const n of pq) {
+          if (current === null || distances[n] < distances[current]) {
+            current = n;
+          }
+        }
+
+        if (current === endNode || distances[current] === Infinity) break;
+        pq.delete(current);
+
+        for (const neighbor of graph[current]) {
+          if (!pq.has(neighbor.node)) continue;
+          const alt = distances[current] + neighbor.dist;
+          if (alt < distances[neighbor.node]) {
+            distances[neighbor.node] = alt;
+            previous[neighbor.node] = current;
+            edgeUsed[neighbor.node] = { type: neighbor.type, corridor: neighbor.corridor };
+          }
+        }
+      }
+
+      const path = [];
+      let curr = endNode;
+      while (curr !== null) {
+        path.unshift({ node: curr, edge: edgeUsed[curr] });
+        curr = previous[curr];
+      }
+
+      return { path, totalDist: distances[endNode] };
+    }
+
+    /* ==========================================================================
+       3. APP STATE & UI INITIALIZATION
+       ========================================================================== */
+    let selectedStart = '';
+    let selectedEnd = '';
+    let html5QrCode = null;
+
+    // Zoom & Pan state
+    let zoomLevel = 1;
+    let panX = 0;
+    let panY = 0;
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
+
+    const startSelect = document.getElementById('startLocationSelect');
+    const endSelect = document.getElementById('endLocationSelect');
+    const quickChipsContainer = document.getElementById('quickChipsContainer');
+    const modalSimButtons = document.getElementById('modalSimButtons');
+    const routeLayer = document.getElementById('routeLayer');
+    const markersLayer = document.getElementById('markersLayer');
+    const directionsCard = document.getElementById('directionsCard');
+    const directionsList = document.getElementById('directionsList');
+    const routeStats = document.getElementById('routeStats');
+    const routeBadge = document.getElementById('routeBadge');
+    const svgMap = document.getElementById('venueMapSvg');
+    const mapContainer = document.getElementById('mapContainer');
+    const staffModeToggle = document.getElementById('staffModeToggle');
+
+    // Initialize UI
+    function initApp() {
+      populateDropdowns();
+      populateQuickChips();
+      setupZoomPan();
+      setupLayerToggles();
+    }
+
+    function populateDropdowns() {
+      locations.forEach(loc => {
+        const optStart = document.createElement('option');
+        optStart.value = loc.id;
+        optStart.textContent = `${loc.name} (${loc.category})`;
+        startSelect.appendChild(optStart);
+
+        const optEnd = document.createElement('option');
+        optEnd.value = loc.id;
+        optEnd.textContent = `${loc.name} (${loc.category})`;
+        endSelect.appendChild(optEnd);
+      });
+    }
+
+    function populateQuickChips() {
+      const popularIds = ['main-gate', 'main-auditorium', 'vip-area', 'bar-1', 'kitchen', 'staff-room'];
+      popularIds.forEach(id => {
+        const loc = locations.find(l => l.id === id);
+        if (!loc) return;
+
+        const chip = document.createElement('button');
+        chip.className = 'text-xs bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 px-2.5 py-1 rounded-lg border border-slate-700 flex items-center gap-1.5 transition-all';
+        chip.innerHTML = `<i class="fa-solid ${loc.icon}" style="color:${loc.color}"></i> ${loc.name}`;
+        chip.onclick = () => setScannedLocation(loc.id);
+        quickChipsContainer.appendChild(chip);
+
+        const modalBtn = document.createElement('button');
+        modalBtn.className = 'text-xs bg-slate-800 hover:bg-brand-600/30 hover:border-brand-500 text-left p-2 rounded-lg border border-slate-700 text-slate-200 flex items-center gap-2 transition-all';
+        modalBtn.innerHTML = `<i class="fa-solid ${loc.icon} text-brand-400"></i> <span class="truncate">${loc.name}</span>`;
+        modalBtn.onclick = () => {
+          setScannedLocation(loc.id);
+          closeScannerModal();
+        };
+        modalSimButtons.appendChild(modalBtn);
+      });
+    }
+
+    function setupLayerToggles() {
+      document.getElementById('togglePublicCorridors').addEventListener('change', (e) => {
+        document.getElementById('layer-public-corridors').style.display = e.target.checked ? 'block' : 'none';
+      });
+      document.getElementById('toggleVipCorridors').addEventListener('change', (e) => {
+        document.getElementById('layer-vip-corridors').style.display = e.target.checked ? 'block' : 'none';
+      });
+      document.getElementById('toggleStaffCorridors').addEventListener('change', (e) => {
+        document.getElementById('layer-staff-corridors').style.display = e.target.checked ? 'block' : 'none';
+      });
+      staffModeToggle.addEventListener('change', () => {
+        if (selectedStart && selectedEnd) renderRoute();
+      });
+    }
+
+    /* ==========================================================================
+       4. MAP INTERACTION & RENDERING ROUTE
+       ========================================================================== */
+    function renderRoute() {
+      routeLayer.innerHTML = '';
+      markersLayer.innerHTML = '';
+
+      if (!selectedStart || !selectedEnd) {
+        directionsCard.classList.add('hidden');
+        return;
+      }
+
+      if (selectedStart === selectedEnd) {
+        showToast('Origin and Destination are the same!');
+        directionsCard.classList.add('hidden');
+        return;
+      }
+
+      const startLoc = locations.find(l => l.id === selectedStart);
+      const endLoc = locations.find(l => l.id === selectedEnd);
+      const isStaffMode = staffModeToggle.checked;
+
+      const { path, totalDist } = findShortestPath(startLoc.node, endLoc.node, isStaffMode);
+
+      if (!path || path.length < 2) {
+        showToast('No valid path available with current access settings.');
+        return;
+      }
+
+      const points = path.map(p => `${nodes[p.node].x},${nodes[p.node].y}`).join(' ');
+
+      // Check if route utilizes staff work paths
+      const usesStaffPath = path.some(p => p.edge && p.edge.type === 'staff');
+      const routeColor = usesStaffPath ? '#c084fc' : '#22c55e';
+
+      // 1. Draw Path Glow Shadow Line
+      const glowPath = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+      glowPath.setAttribute('points', points);
+      glowPath.setAttribute('fill', 'none');
+      glowPath.setAttribute('stroke', routeColor);
+      glowPath.setAttribute('stroke-width', '10');
+      glowPath.setAttribute('stroke-linecap', 'round');
+      glowPath.setAttribute('stroke-linejoin', 'round');
+      glowPath.setAttribute('opacity', '0.35');
+      glowPath.setAttribute('filter', 'url(#glow)');
+      routeLayer.appendChild(glowPath);
+
+      // 2. Draw Animated Solid Dash Path Line
+      const routeLine = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+      routeLine.setAttribute('points', points);
+      routeLine.setAttribute('fill', 'none');
+      routeLine.setAttribute('stroke', routeColor);
+      routeLine.setAttribute('stroke-width', '5');
+      routeLine.setAttribute('stroke-linecap', 'round');
+      routeLine.setAttribute('stroke-linejoin', 'round');
+      routeLine.setAttribute('class', 'route-animated');
+      routeLayer.appendChild(routeLine);
+
+      // 3. Render Origin Node Marker
+      const startPos = nodes[startLoc.node];
+      const startMarker = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      startMarker.innerHTML = `
+        <circle cx="${startPos.x}" cy="${startPos.y}" r="12" fill="${routeColor}" opacity="0.3" class="node-pulse"/>
+        <circle cx="${startPos.x}" cy="${startPos.y}" r="7" fill="${routeColor}" stroke="#ffffff" stroke-width="2"/>
+        <text x="${startPos.x}" y="${startPos.y - 14}" fill="${routeColor}" font-size="12" font-weight="700" text-anchor="middle">START</text>
+      `;
+      markersLayer.appendChild(startMarker);
+
+      // 4. Render Destination Pin Marker
+      const endPos = nodes[endLoc.node];
+      const endMarker = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      endMarker.innerHTML = `
+        <circle cx="${endPos.x}" cy="${endPos.y}" r="14" fill="#ef4444" opacity="0.3" class="node-pulse"/>
+        <circle cx="${endPos.x}" cy="${endPos.y}" r="8" fill="#ef4444" stroke="#ffffff" stroke-width="2"/>
+        <text x="${endPos.x}" y="${endPos.y - 16}" fill="#fca5a5" font-size="12" font-weight="700" text-anchor="middle">DESTINATION</text>
+      `;
+      markersLayer.appendChild(endMarker);
+
+      // Update badge label
+      if (usesStaffPath) {
+        routeBadge.textContent = 'Staff Work Path Mode';
+        routeBadge.className = 'text-[10px] bg-purple-950 text-purple-300 px-2 py-0.5 rounded border border-purple-700/60 font-semibold';
+      } else {
+        routeBadge.textContent = 'Public Walkways';
+        routeBadge.className = 'text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded border border-slate-700';
+      }
+
+      // 5. Generate Turn-by-Turn Corridor Directions
+      generateDirections(path, startLoc, endLoc, totalDist, usesStaffPath);
+    }
+
+    /* TURN BY TURN CORRIDOR DIRECTION GENERATOR */
+    function generateDirections(path, startLoc, endLoc, pixelDist, usesStaffPath) {
+      const meters = Math.round(pixelDist * 0.55);
+      const mins = Math.max(1, Math.ceil(meters / 75));
+
+      routeStats.textContent = `Approx. ${meters} meters • ${mins} min walk`;
+      directionsList.innerHTML = '';
+
+      const steps = [
+        {
+          icon: 'fa-location-dot',
+          color: 'text-brand-400',
+          title: `Start at ${startLoc.name}`,
+          desc: `Begin at the ${startLoc.category.toLowerCase()} section.`
+        }
+      ];
+
+      // Group path nodes into corridor transition steps
+      let currentCorridor = '';
+      for (let i = 1; i < path.length; i++) {
+        const item = path[i];
+        if (item.edge && item.edge.corridor !== currentCorridor) {
+          currentCorridor = item.edge.corridor;
+          const isStaffStep = item.edge.type === 'staff';
+          const isVipStep = item.edge.type === 'vip';
+          
+          steps.push({
+            icon: isStaffStep ? 'fa-user-gear' : (isVipStep ? 'fa-crown' : 'fa-shoe-prints'),
+            color: isStaffStep ? 'text-purple-400' : (isVipStep ? 'fa-amber-400' : 'text-slate-300'),
+            title: `Proceed via ${currentCorridor}`,
+            desc: isStaffStep ? 'Restricted Staff Service Path access.' : `Pass near ${nodes[item.node].name}.`
+          });
+        }
+      }
+
+      steps.push({
+        icon: 'fa-flag-checkered',
+        color: 'text-rose-400',
+        title: `Arrive at ${endLoc.name}`,
+        desc: `Target reached in ${endLoc.category} zone.`
+      });
+
+      steps.forEach((step, index) => {
+        const item = document.createElement('div');
+        item.className = 'flex items-start gap-3 bg-slate-800/40 p-2 rounded-lg border border-slate-800';
+        item.innerHTML = `
+          <div class="w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center text-xs ${step.color} shrink-0 mt-0.5">
+            <i class="fa-solid ${step.icon}"></i>
+          </div>
+          <div>
+            <h4 class="font-semibold text-slate-200 text-xs">${index + 1}. ${step.title}</h4>
+            <p class="text-[11px] text-slate-400">${step.desc}</p>
+          </div>
+        `;
+        directionsList.appendChild(item);
+      });
+
+      directionsCard.classList.remove('hidden');
+    }
+
+    // Map direct zone click handler
+    window.selectZoneFromMap = function(zoneId) {
+      const loc = locations.find(l => l.id === zoneId);
+      if (!loc) return;
+
+      if (!selectedStart) {
+        selectedStart = zoneId;
+        startSelect.value = zoneId;
+        showToast(`Selected "${loc.name}" as Starting Point.`);
+      } else {
+        selectedEnd = zoneId;
+        endSelect.value = zoneId;
+        showToast(`Selected "${loc.name}" as Destination.`);
+      }
+      renderRoute();
+    };
+
+    /* ==========================================================================
+       5. ZOOM AND PAN CONTROLS
+       ========================================================================== */
+    function setupZoomPan() {
+      const updateTransform = () => {
+        svgMap.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomLevel})`;
+      };
+
+      document.getElementById('zoomInBtn').onclick = () => {
+        zoomLevel = Math.min(zoomLevel + 0.25, 3);
+        updateTransform();
+      };
+
+      document.getElementById('zoomOutBtn').onclick = () => {
+        zoomLevel = Math.max(zoomLevel - 0.25, 0.8);
+        updateTransform();
+      };
+
+      document.getElementById('zoomResetBtn').onclick = () => {
+        zoomLevel = 1;
+        panX = 0;
+        panY = 0;
+        updateTransform();
+      };
+
+      mapContainer.addEventListener('mousedown', (e) => {
+        if (e.target.closest('button')) return;
+        isDragging = true;
+        startX = e.clientX - panX;
+        startY = e.clientY - panY;
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        panX = e.clientX - startX;
+        panY = e.clientY - startY;
+        updateTransform();
+      });
+
+      window.addEventListener('mouseup', () => {
+        isDragging = false;
+      });
+
+      mapContainer.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) {
+          isDragging = true;
+          startX = e.touches[0].clientX - panX;
+          startY = e.touches[0].clientY - panY;
+        }
+      });
+
+      mapContainer.addEventListener('touchmove', (e) => {
+        if (isDragging && e.touches.length === 1) {
+          panX = e.touches[0].clientX - startX;
+          panY = e.touches[0].clientY - startY;
+          updateTransform();
+        }
+      });
+
+      mapContainer.addEventListener('touchend', () => {
+        isDragging = false;
+      });
+    }
+
+    /* ==========================================================================
+       6. EVENT LISTENERS & QR SCANNER MODAL LOGIC
+       ========================================================================== */
+    startSelect.onchange = (e) => {
+      selectedStart = e.target.value;
+      renderRoute();
+    };
+
+    endSelect.onchange = (e) => {
+      selectedEnd = e.target.value;
+      renderRoute();
+    };
+
+    document.getElementById('findRouteBtn').onclick = () => {
+      if (!selectedStart) {
+        showToast('Please select a Starting Location!');
+        return;
+      }
+      if (!selectedEnd) {
+        showToast('Please select a Destination!');
+        return;
+      }
+      renderRoute();
+    };
+
+    document.getElementById('clearRouteBtn').onclick = () => {
+      selectedStart = '';
+      selectedEnd = '';
+      startSelect.value = '';
+      endSelect.value = '';
+      routeLayer.innerHTML = '';
+      markersLayer.innerHTML = '';
+      directionsCard.classList.add('hidden');
+      showToast('Route cleared.');
+    };
+
+    document.getElementById('swapLocationsBtn').onclick = () => {
+      const temp = selectedStart;
+      selectedStart = selectedEnd;
+      selectedEnd = temp;
+      startSelect.value = selectedStart;
+      endSelect.value = selectedEnd;
+      renderRoute();
+    };
+
+    function setScannedLocation(locId) {
+      selectedStart = locId;
+      startSelect.value = locId;
+      const loc = locations.find(l => l.id === locId);
+      showToast(`Location set to: ${loc ? loc.name : locId}`);
+      renderRoute();
+    }
+
+    const qrModal = document.getElementById('qrModal');
+    
+    document.getElementById('openScannerBtn').onclick = () => {
+      qrModal.classList.remove('hidden');
+      startQrCamera();
+    };
+
+    document.getElementById('closeScannerBtn').onclick = closeScannerModal;
+
+    function closeScannerModal() {
+      qrModal.classList.add('hidden');
+      if (html5QrCode && html5QrCode.isScanning) {
+        html5QrCode.stop().catch(err => console.error(err));
+      }
+    }
+
+    function startQrCamera() {
+      if (typeof Html5Qrcode === 'undefined') return;
+      if (!html5QrCode) {
+        html5QrCode = new Html5Qrcode("qr-reader");
+      }
+      
+      const config = { fps: 10, qrbox: { width: 200, height: 200 } };
+      
+      html5QrCode.start(
+        { facingMode: "environment" },
+        config,
+        (decodedText) => {
+          const matched = locations.find(l => 
+            l.id.toLowerCase() === decodedText.toLowerCase() || 
+            l.name.toLowerCase() === decodedText.toLowerCase()
+          );
+
+          if (matched) {
+            setScannedLocation(matched.id);
+          } else {
+            setScannedLocation('main-gate');
+          }
+          closeScannerModal();
+        },
+        (errorMessage) => {}
+      ).catch(err => {
+        console.warn("Camera access denied or unavailable", err);
+      });
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      document.getElementById('toastMsg').textContent = msg;
+      toast.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-4');
+      toast.classList.add('opacity-100', 'translate-y-0');
+
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'pointer-events-none', 'translate-y-4');
+        toast.classList.remove('opacity-100', 'translate-y-0');
+      }, 3000);
+    }
+
+    window.onload = initApp;
+  </script>
+</body>
+</html>
